@@ -280,8 +280,7 @@ class Build:
         t_new = ('if (!defined(custom_toolchain) || custom_toolchain == "") {\n'
                  '      custom_toolchain = termux_custom_toolchain\n'
                  '    }\n'
-                 '    assert(custom_toolchain != "", "termux toolchain needs "\n'
-                 '           "custom_toolchain or termux_custom_toolchain")')
+                 '    assert(custom_toolchain != "", "termux toolchain needs termux_custom_toolchain")')
         s = tc.read_text()
         if 'termux_custom_toolchain' not in s:
             assert t_old in s, f'unexpected termux BUILD.gn content in {tc}'
