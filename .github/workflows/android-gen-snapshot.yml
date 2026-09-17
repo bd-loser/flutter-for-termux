@@ -23,14 +23,12 @@ jobs:
             libfontconfig1-dev \
             ninja-build
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-
-      - name: install python requirements
-        run: '"$pythonLocation/bin/python3" -m pip install -r requirements.txt'
+      - name: Set up venv Python
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/venv/bin/python" -m pip install -r requirements.txt
+          echo "VPY=$RUNNER_TEMP/venv/bin/python" >> "$GITHUB_ENV"
 
       - name: Ensure depot_tools is available
         shell: bash
@@ -75,17 +73,17 @@ jobs:
           python3 -V
           python3 -c "import sys; print(sys.executable)"
           pip3 list 2>/dev/null | grep -iE "git|yaml|fire|loguru" || true
-          "$pythonLocation/bin/python3" build.py clone
-          "$pythonLocation/bin/python3" build.py sync
+          "$VPY" build.py clone
+          "$VPY" build.py sync
 
       - name: build termux sysroot
-        run: '"$pythonLocation/bin/python3" build.py sysroot --arch=arm64'
+        run: '"$VPY" build.py sysroot --arch=arm64'
 
       - name: configure android (termux host tools)
-        run: '"$pythonLocation/bin/python3" build.py configure_android --arch=arm64 --mode=release'
+        run: '"$VPY" build.py configure_android --arch=arm64 --mode=release'
 
       - name: build gen_snapshot
-        run: '"$pythonLocation/bin/python3" build.py build_android_gen_snapshot'
+        run: '"$VPY" build.py build_android_gen_snapshot'
 
       - name: verify binary
         run: |

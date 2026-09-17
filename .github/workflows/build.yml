@@ -34,14 +34,12 @@ jobs:
             libfontconfig1-dev \
             ninja-build
 
-      - name: Set up Python
-        uses: actions/setup-python@v7.0.0
-        with:
-          python-version: '3.12'
-          cache: pip
-
-      - name: install python requirements
-        run: '"$pythonLocation/bin/python3" -m pip install -r requirements.txt'
+      - name: Set up venv Python
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/venv/bin/python" -m pip install -r requirements.txt
+          echo "VPY=$RUNNER_TEMP/venv/bin/python" >> "$GITHUB_ENV"
 
       - name: Ensure depot_tools is available
         shell: bash
@@ -76,12 +74,12 @@ jobs:
           echo "ANDROID_NDK=$NDK_DIR" >> "$GITHUB_ENV"
 
       - name: build flutter/toolchain + package deb
-        run: '"$pythonLocation/bin/python3" build.py'
+        run: '"$VPY" build.py'
 
       - name: parse tag
         id: parser
         run: |
-          TAG=$(NO_RECORD=1 "$pythonLocation/bin/python3" build.py tag)
+          TAG=$(NO_RECORD=1 "$VPY" build.py tag)
           echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
           echo "TITLE=Flutter $TAG" >> "$GITHUB_OUTPUT"
 
