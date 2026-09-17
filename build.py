@@ -269,8 +269,8 @@ class Build:
         angle = (Path(root) / 'engine' / 'src' / 'flutter' / 'third_party'
                  / 'angle' / 'gni' / 'angle.gni')
         a_old = ('configs -= [ "//build/config/android:hide_all_but_jni_onload" ]')
-        a_new = ('if (filter_include(configs, [ '
-                 '"//build/config/android:hide_all_but_jni_onload" ]) != []) {\n'
+        a_new = ('if (configs != filter_exclude(configs, [ '
+                 '"//build/config/android:hide_all_but_jni_onload" ])) {\n'
                  '  configs -= [ "//build/config/android:hide_all_but_jni_onload" ]\n'
                  '}')
         s = angle.read_text()
