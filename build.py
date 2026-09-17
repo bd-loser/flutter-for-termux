@@ -264,6 +264,22 @@ class Build:
             bc.write_text(s.replace(bc_old, bc_new))
             logger.info('patched BUILDCONFIG.gn: termux_host_cpu host_toolchain')
 
+        # ANGLE unconditionally removes an Android-only config that the
+        # Termux default toolchain never applies; guard the removal.
+        angle = (Path(root) / 'engine' / 'src' / 'flutter' / 'third_party'
+                 / 'angle' / 'gni' / 'angle.gni')
+        a_old = ('configs -= [ "//build/config/android:hide_all_but_jni_onload" ]')
+        a_new = ('if (filter_include(configs, [ '
+                 '"//build/config/android:hide_all_but_jni_onload" ]) != []) {\n'
+                 '  configs -= [ "//build/config/android:hide_all_but_jni_onload" ]\n'
+                 '}')
+        s = angle.read_text()
+        if a_new not in s:
+            assert a_old in s, f'unexpected angle.gni content in {angle}'
+            s = s.replace(a_old, a_new)
+            angle.write_text(s)
+            logger.info('patched angle.gni: guard hide_all_but_jni_onload removal')
+
     def configure_android(
         self,
         arch: str = 'arm64',
