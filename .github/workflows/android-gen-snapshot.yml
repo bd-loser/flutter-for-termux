@@ -30,7 +30,7 @@ jobs:
           cache: pip
 
       - name: install python requirements
-        run: "$pythonLocation/bin/python3" -m pip install -r requirements.txt
+        run: '"$pythonLocation/bin/python3" -m pip install -r requirements.txt'
 
       - name: Ensure depot_tools is available
         shell: bash
@@ -79,13 +79,13 @@ jobs:
           "$pythonLocation/bin/python3" build.py sync
 
       - name: build termux sysroot
-        run: "$pythonLocation/bin/python3" build.py sysroot --arch=arm64
+        run: '"$pythonLocation/bin/python3" build.py sysroot --arch=arm64'
 
       - name: configure android (termux host tools)
-        run: "$pythonLocation/bin/python3" build.py configure_android --arch=arm64 --mode=release
+        run: '"$pythonLocation/bin/python3" build.py configure_android --arch=arm64 --mode=release'
 
       - name: build gen_snapshot
-        run: "$pythonLocation/bin/python3" build.py build_android_gen_snapshot
+        run: '"$pythonLocation/bin/python3" build.py build_android_gen_snapshot'
 
       - name: verify binary
         run: |

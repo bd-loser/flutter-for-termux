@@ -41,7 +41,7 @@ jobs:
           cache: pip
 
       - name: install python requirements
-        run: python -m pip install -r requirements.txt
+        run: '"$pythonLocation/bin/python3" -m pip install -r requirements.txt'
 
       - name: Ensure depot_tools is available
         shell: bash
@@ -76,12 +76,12 @@ jobs:
           echo "ANDROID_NDK=$NDK_DIR" >> "$GITHUB_ENV"
 
       - name: build flutter/toolchain + package deb
-        run: python build.py
+        run: '"$pythonLocation/bin/python3" build.py'
 
       - name: parse tag
         id: parser
         run: |
-          TAG=$(NO_RECORD=1 python build.py tag)
+          TAG=$(NO_RECORD=1 "$pythonLocation/bin/python3" build.py tag)
           echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
           echo "TITLE=Flutter $TAG" >> "$GITHUB_OUTPUT"
 
