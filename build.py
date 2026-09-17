@@ -251,6 +251,12 @@ class Build:
                   '  } else {\n'
                   '    host_toolchain = "//build/toolchain/termux:$host_cpu"\n'
                   '  }\n'
+                  '}\n'
+                  '# The Termux default toolchain skips the Android config block that\n'
+                  '# would normally declare android_ndk_api_level; declare it here so\n'
+                  '# dependents such as ANGLE can evaluate (NDK r27 supports API 27+).\n'
+                  'if (is_android && is_termux_host) {\n'
+                  '  android_ndk_api_level = 27\n'
                   '}')
         s = bc.read_text()
         if bc_new not in s:
