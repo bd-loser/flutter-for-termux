@@ -70,6 +70,11 @@ jobs:
 
       - name: fetch flutter sources
         run: |
+          echo "PATH=$PATH"
+          which -a python python3 || true
+          python -V
+          python -c "import sys; print(sys.executable); print(sys.path)"
+          pip list 2>/dev/null | grep -iE "git|yaml|fire|loguru" || true
           python build.py clone
           python build.py sync
 
