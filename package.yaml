@@ -73,18 +73,20 @@ resource:
       path: $eng
 
   # Native Termux-host gen_snapshot for `flutter build apk --release`.
-  # Built by build.py configure_android/build_android_gen_snapshot into
-  # out/android_release_arm64/host (bionic ARM64).  Flutter looks it up at
-  # engine/android-arm64-release/linux-arm64/gen_snapshot; post_install.sh
-  # symlinks linux-x64 -> linux-arm64 for tools that still guess x64 hosts.
+  # The dart AOT compiler's TARGET is fixed at build time (target_cpu), so
+  # the product-mode gen_snapshot from the linux_release_arm64 out dir
+  # already emits ARM64 machine code; the android-*/linux-* directory split
+  # in official artifacts is packaging metadata, not compiler capability.
+  # Flutter looks it up at engine/android-arm64-release/linux-<host>/ ;
+  # post_install.sh symlinks linux-x64 -> linux-arm64 on Termux hosts.
   android_gen_snapshot_release:
     source:
-      - $android_out/gen_snapshot
+      - $any/gen_snapshot
     output:
       - $eng/android-arm64-release/linux-arm64
     define:
+      any: *any
       eng: *eng
-      android_out: f'{root}/engine/src/out/android_release_arm64/host'
     mode: 0o755
 
   flutter_linux_gtk: &gtk
