@@ -222,6 +222,117 @@ class Build:
             cmd.append(f'-j{jobs}')
         subprocess.run(cmd, check=True, stdout=True, stderr=True)
 
+    def _patch_android_host(self, root: str):
+        """Let ANDROID builds compile host tools (gen_snapshot) for Termux.
+
+        The termux host_toolchain defaults to //build/toolchain/termux:$host_cpu
+        which on x86-64 CI builders means bionic x86_64.  Override the cpu via a
+        new termux_host_cpu gn arg so GitHub-hosted (x64) runners can emit a
+        native ARM64 bionic gen_snapshot.
+        """
+        src = Path(root) / 'engine' / 'src' / 'build'
+        gni = src / 'config' / 'termux' / 'termux.gni'
+        bc = src / 'config' / 'BUILDCONFIG.gn'
+
+        gni_old = '  is_termux = false\n  is_termux_host = false\n}'
+        gni_new = '  is_termux = false\n  is_termux_host = false\n\n  termux_host_cpu = ""\n}'
+        s = gni.read_text()
+        if gni_new not in s:
+            assert gni_old in s, f'unexpected termux.gni content in {gni}'
+            gni.write_text(s.replace(gni_old, gni_new))
+            logger.info('patched termux.gni: termux_host_cpu')
+
+        bc_old = ('if (is_termux_host) {\n'
+                  '  host_toolchain = "//build/toolchain/termux:$host_cpu"\n'
+                  '}')
+        bc_new = ('if (is_termux_host) {\n'
+                  '  if (termux_host_cpu != "") {\n'
+                  '    host_toolchain = "//build/toolchain/termux:$termux_host_cpu"\n'
+                  '  } else {\n'
+                  '    host_toolchain = "//build/toolchain/termux:$host_cpu"\n'
+                  '  }\n'
+                  '}')
+        s = bc.read_text()
+        if bc_new not in s:
+            assert bc_old in s, f'unexpected BUILDCONFIG.gn content in {bc}'
+            bc.write_text(s.replace(bc_old, bc_new))
+            logger.info('patched BUILDCONFIG.gn: termux_host_cpu host_toolchain')
+
+    def configure_android(
+        self,
+        arch: str = 'arm64',
+        mode: str = 'release',
+        root: str = None,
+        sysroot: str = None,
+        toolchain: str = None,
+    ):
+        """Configure an Android build whose host tools are Termux-native.
+
+        Produces out/android_release_<arch>/clang_arm64/gen_snapshot as a
+        bionic ARM64 executable runnable directly on Termux.
+        """
+        root = root or self.root
+        sysroot = os.path.abspath(sysroot or self.sysroot.path)
+        toolchain = os.path.abspath(toolchain or self.toolchain)
+        self._patch_android_host(root)
+        cmd = [
+            'vpython3',
+            'engine/src/flutter/tools/gn',
+            '--android',
+            '--android-cpu', arch,
+            '--no-goma',
+            '--no-backtrace',
+            '--clang',
+            '--lto',
+            '--no-enable-unittests',
+            '--no-build-embedder-examples',
+            '--no-prebuilt-dart-sdk',
+            '--runtime-mode', mode,
+            '--target-toolchain', toolchain,
+            '--gn-args', 'symbol_level=0',
+            '--gn-args', 'dart_include_wasm_opt=false',
+            '--gn-args', 'skia_use_perfetto=false',
+            '--gn-args', 'is_desktop_linux=false',
+            '--gn-args', 'use_default_linux_sysroot=false',
+            '--gn-args', f'custom_sysroot="{sysroot}"',
+            '--gn-args', f'target_sysroot="{sysroot}"',
+            '--gn-args', 'is_termux=true',
+            '--gn-args', 'is_termux_host=true',
+            '--gn-args', f'termux_host_cpu="{arch}"',
+            '--gn-args', f'termux_api_level={self.api}',
+        ]
+        logger.info(f'configure android ({mode}/{arch}) -> {cmd}')
+        subprocess.run(cmd, cwd=root, check=True, stdout=True, stderr=True)
+
+    def build_android_gen_snapshot(self, root: str = None, jobs: int = None):
+        root = root or self.root
+        out = os.path.join(root, 'engine', 'src', 'out', 'android_release_arm64')
+        cmd = [
+            'ninja', '-C', out,
+            'flutter/third_party/dart/runtime/bin:gen_snapshot',
+        ]
+        if jobs:
+            cmd.append(f'-j{jobs}')
+        logger.info(f'building android gen_snapshot: {" ".join(cmd)}')
+        subprocess.run(cmd, check=True, stdout=True, stderr=True)
+
+        out = Path(out)
+        host = out / 'host'
+        host.mkdir(exist_ok=True)
+        for cand in (
+            out / 'host' / 'gen_snapshot',
+            out / 'clang_arm64' / 'gen_snapshot',
+            out / 'clang_x64' / 'gen_snapshot',
+            out / 'gen_snapshot',
+        ):
+            if cand.is_file():
+                dst = host / 'gen_snapshot'
+                if cand != dst:
+                    shutil.copy(cand, dst)
+                logger.info(f'android gen_snapshot -> {dst}')
+                return dst
+        raise RuntimeError(f'gen_snapshot not found under {out}')
+
     def debuild(self, arch: str, output: str = None, root: str = None, **conf):
         conf = conf or self.package
         root = root or self.root
@@ -258,6 +369,9 @@ class Build:
             for mode in self.mode:
                 self.configure(arch=arch, mode=mode)
                 self.build(arch=arch, mode=mode)
+            if str(arch) == 'arm64':
+                self.configure_android(arch=arch)
+                self.build_android_gen_snapshot(arch=arch)
             self.debuild(arch=arch, output=self.output(arch))
 
 
