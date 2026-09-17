@@ -234,13 +234,19 @@ class Build:
         gni = src / 'config' / 'termux' / 'termux.gni'
         bc = src / 'config' / 'BUILDCONFIG.gn'
 
-        gni_old = '  is_termux = false\n  is_termux_host = false\n}'
-        gni_new = '  is_termux = false\n  is_termux_host = false\n\n  termux_host_cpu = ""\n}'
         s = gni.read_text()
-        if gni_new not in s:
-            assert gni_old in s, f'unexpected termux.gni content in {gni}'
-            gni.write_text(s.replace(gni_old, gni_new))
+        if 'termux_host_cpu' not in s:
+            old = '  is_termux_host = false\n}'
+            assert old in s, f'unexpected termux.gni content in {gni}'
+            s = s.replace(old, '  is_termux_host = false\n\n  termux_host_cpu = ""\n}')
             logger.info('patched termux.gni: termux_host_cpu')
+        if 'termux_custom_toolchain' not in s:
+            old = '  termux_host_cpu = ""\n}'
+            assert old in s, f'unexpected termux.gni content in {gni}'
+            s = s.replace(
+                old, '  termux_host_cpu = ""\n\n  termux_custom_toolchain = ""\n}')
+            logger.info('patched termux.gni: termux_custom_toolchain')
+        gni.write_text(s)
 
         bc_old = ('if (is_termux_host) {\n'
                   '  host_toolchain = "//build/toolchain/termux:$host_cpu"\n'
@@ -264,6 +270,24 @@ class Build:
             bc.write_text(s.replace(bc_old, bc_new))
             logger.info('patched BUILDCONFIG.gn: termux_host_cpu host_toolchain')
 
+        # The termux host toolchain needs an NDK compiler path.  It normally
+        # inherits custom_toolchain from --target-toolchain, but the Android
+        # build must keep the standard android default toolchain, so allow a
+        # dedicated termux_custom_toolchain gn arg instead.
+        tc = (Path(root) / 'engine' / 'src' / 'build' / 'toolchain'
+              / 'termux' / 'BUILD.gn')
+        t_old = 'assert(defined(custom_toolchain) && custom_toolchain != "")'
+        t_new = ('if (!defined(custom_toolchain) || custom_toolchain == "") {\n'
+                 '      custom_toolchain = termux_custom_toolchain\n'
+                 '    }\n'
+                 '    assert(custom_toolchain != "", "termux toolchain needs "\n'
+                 '           "custom_toolchain or termux_custom_toolchain")')
+        s = tc.read_text()
+        if 'termux_custom_toolchain' not in s:
+            assert t_old in s, f'unexpected termux BUILD.gn content in {tc}'
+            tc.write_text(s.replace(t_old, t_new))
+            logger.info('patched termux BUILD.gn: termux_custom_toolchain')
+
         # ANGLE unconditionally removes an Android-only config that the
         # Termux default toolchain never applies; guard the removal.
         angle = (Path(root) / 'engine' / 'src' / 'flutter' / 'third_party'
@@ -280,6 +304,23 @@ class Build:
             angle.write_text(s)
             logger.info('patched angle.gni: guard hide_all_but_jni_onload removal')
 
+        # angle_apk() is only defined when enable_java_templates is on, but
+        # the call site in angle/BUILD.gn does not check it; mirror the
+        # template's own condition so GN can evaluate the graph when the
+        # Android config defaults it to false.
+        ab = (Path(root) / 'engine' / 'src' / 'flutter' / 'third_party'
+              / 'angle' / 'BUILD.gn')
+        ab_old = ('if ((angle_standalone || build_with_chromium) && is_android &&\n'
+                  '    current_toolchain == default_toolchain) {')
+        ab_new = ('if ((angle_standalone || build_with_chromium) && is_android &&\n'
+                  '    current_toolchain == default_toolchain &&\n'
+                  '    enable_java_templates) {')
+        s = ab.read_text()
+        if ab_new not in s:
+            assert ab_old in s, f'unexpected angle BUILD.gn apk guard in {ab}'
+            ab.write_text(s.replace(ab_old, ab_new))
+            logger.info('patched angle BUILD.gn: guard angle_apk call')
+
     def configure_android(
         self,
         arch: str = 'arm64',
@@ -290,12 +331,17 @@ class Build:
     ):
         """Configure an Android build whose host tools are Termux-native.
 
-        Produces out/android_release_<arch>/clang_arm64/gen_snapshot as a
-        bionic ARM64 executable runnable directly on Termux.
+        Keeps the standard Android default toolchain (so the whole build
+        graph evaluates exactly like upstream) and only reroutes the *host*
+        toolchain to the Termux bionic toolchain.  Produces
+        out/android_release_<arch>/<hostdir>/gen_snapshot as a bionic ARM64
+        executable runnable directly on Termux.
         """
         root = root or self.root
         sysroot = os.path.abspath(sysroot or self.sysroot.path)
         toolchain = os.path.abspath(toolchain or self.toolchain)
+        ndk_root = str(Path(toolchain).parents[3])
+        sdk_root = str(Path(toolchain).parents[4])
         self._patch_android_host(root)
         cmd = [
             'vpython3',
@@ -310,17 +356,17 @@ class Build:
             '--no-build-embedder-examples',
             '--no-prebuilt-dart-sdk',
             '--runtime-mode', mode,
-            '--target-toolchain', toolchain,
             '--gn-args', 'symbol_level=0',
             '--gn-args', 'dart_include_wasm_opt=false',
             '--gn-args', 'skia_use_perfetto=false',
             '--gn-args', 'is_desktop_linux=false',
             '--gn-args', 'use_default_linux_sysroot=false',
             '--gn-args', f'custom_sysroot="{sysroot}"',
-            '--gn-args', f'target_sysroot="{sysroot}"',
-            '--gn-args', 'is_termux=true',
+            '--gn-args', f'android_ndk_root="{ndk_root}"',
+            '--gn-args', f'android_sdk_root="{sdk_root}"',
             '--gn-args', 'is_termux_host=true',
             '--gn-args', f'termux_host_cpu="{arch}"',
+            '--gn-args', f'termux_custom_toolchain="{toolchain}"',
             '--gn-args', f'termux_api_level={self.api}',
         ]
         logger.info(f'configure android ({mode}/{arch}) -> {cmd}')
